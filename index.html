@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Photo Frame Camera Booth</title>
+  <!-- Tailwind CSS for responsive layout and crisp modern UI -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Noto Sans TC -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* Base setup & mobile safe-area handling */
+    :root {
+      --safe-top: env(safe-area-inset-top, 16px);
+      --safe-bottom: env(safe-area-inset-bottom, 20px);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #080B14;
+      color: #FFFFFF;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100dvh;
+      width: 100vw;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Mobile-first App Shell: Full-bleed 9:19.5 vertical viewport on mobile, sleek phone frame on desktop */
+    #app-shell {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 430px;
+      max-height: 932px;
+      background-color: #0E1322;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 70px -15px rgba(0, 0, 0, 0.9);
+    }
+
+    @media (min-width: 520px) {
+      #app-shell {
+        height: 93dvh;
+        aspect-ratio: 9 / 19.5;
+        width: auto;
+        border-radius: 38px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+    }
+
+    /* Mirror class for front-facing camera */
+    .mirror-video {
+      transform: scaleX(-1);
+    }
+
+    /* Shutter flash animation */
+    @keyframes flashEffect {
+      0% { opacity: 0.95; }
+      100% { opacity: 0; }
+    }
+    .animate-flash {
+      animation: flashEffect 0.38s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* Custom horizontal scrollbar hide for frame selector */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Shutter button tactile ring */
+    .shutter-btn {
+      transition: transform 0.14s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .shutter-btn:active {
+      transform: scale(0.9);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Main Mobile App Shell -->
+  <main id="app-shell">
+
+    <!-- =========================================================
+         SCREEN 1: LIVE CAMERA VIEWFINDER + FRAME OVERLAY
+    ========================================================== -->
+    <section id="screen-camera" class="relative w-full h-full flex flex-col justify-between bg-black transition-opacity duration-200">
+      
+      <!-- Top Bar (Floating over viewfinder) -->
+      <header class="relative z-30 flex items-center justify-between px-4 pt-4 pb-3 bg-gradient-to-b from-black/75 via-black/35 to-transparent" style="padding-top: max(16px, var(--safe-top));">
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <h1 class="text-sm font-semibold tracking-wide text-white/95 drop-shadow">
+            FrameCam <span class="text-white/60 font-normal text-xs ml-1" id="active-frame-badge">Frame 1</span>
+          </h1>
+        </div>
+
+        <!-- Upload Custom PNG Frame Button (So user can test their exact Figma PNG frame immediately) -->
+        <!-- Upload Custom Frame Button (Supports PNG or JPG with auto black-center cutout) -->
+        <label for="custom-frame-input" class="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#151c30]/80 hover:bg-[#1e2946] active:scale-95 backdrop-blur-md border border-indigo-300/25 text-xs font-medium text-white transition">
+          <svg class="w-3.5 h-3.5 text-amber-300" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          <span>Add Frame</span>
+        </label>
+        <input id="custom-frame-input" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden" />
+      </header>
+
+      <!-- Center Viewfinder Stage (Full-bleed vertical portrait container) -->
+      <div class="relative flex-1 w-full overflow-hidden flex items-center justify-center bg-[#090D18] p-1">
+        <div id="viewfinder-stage" class="relative max-w-full max-h-full overflow-hidden bg-[#0D1220] flex items-center justify-center shadow-2xl" style="aspect-ratio: 9 / 19.5; height: 100%; width: auto;">
+          
+          <!-- Live Webcam Video -->
+          <video id="camera-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+
+          <!-- Fallback Demo Canvas / Background (Shown if camera permission denied or no webcam on desktop) -->
+          <div id="demo-fallback-layer" class="hidden absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-[#151c30] via-[#1c2642] to-[#0f1526] text-center p-6">
+            <div class="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mb-3 border border-indigo-300/20">
+              <svg class="w-8 h-8 text-indigo-200/80" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+              </svg>
+            </div>
+            <p class="text-sm font-medium text-white/95 mb-1" id="camera-status-text">Camera unavailable or permission denied</p>
+            <p class="text-xs text-indigo-200/70 max-w-[230px] mb-4 leading-relaxed">
+              Please allow camera access or choose a sample photo to preview frames.
+            </p>
+            <div class="flex flex-wrap items-center justify-center gap-2 z-30">
+              <button id="retry-camera-btn" type="button" class="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium text-white border border-white/20 transition">
+                Retry Camera
+              </button>
+              <label for="fallback-photo-input" class="cursor-pointer px-3.5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-xs font-medium text-white shadow-lg transition">
+                Sample Photo
+              </label>
+              <input id="fallback-photo-input" type="file" accept="image/*" class="hidden" />
+            </div>
+          </div>
+
+          <!-- Uploaded Fallback Photo Preview (if user tests without webcam) -->
+          <img id="fallback-photo-preview" alt="Sample Background" class="hidden absolute inset-0 w-full h-full object-cover" />
+
+          <!-- Active Decorative Photo Frame Overlay (Defaults to Frame 1) -->
+          <img id="frame-overlay-img" alt="Selected Photo Frame" class="pointer-events-none absolute inset-0 w-full h-full object-contain z-10 select-none transition-opacity duration-200" />
+
+          <!-- Camera Shutter Flash Overlay -->
+          <div id="shutter-flash" class="pointer-events-none absolute inset-0 bg-white opacity-0 z-20"></div>
+        </div>
+      </div>
+
+      <!-- Slide-up Frame Selection Drawer (Hidden by default, toggled by Left Icon Button) -->
+      <div id="frame-drawer" class="absolute left-0 right-0 bottom-[106px] z-30 px-3 transition-all duration-300 ease-out transform translate-y-6 opacity-0 pointer-events-none">
+        <div class="bg-[#161922]/92 backdrop-blur-xl border border-white/15 rounded-2xl p-3 shadow-2xl">
+          <div class="flex items-center justify-between mb-2.5 px-1">
+            <span class="text-xs font-semibold tracking-wide text-white/90">Select Frame</span>
+            <button id="close-drawer-btn" type="button" class="text-white/50 hover:text-white p-1 rounded-lg transition" aria-label="Close frame menu">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Horizontal Scrollable Frame Thumbnails -->
+          <div id="frame-list" class="flex items-center gap-3 overflow-x-auto no-scrollbar py-1.5 px-1">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Control Bar: 3 Icon Buttons (Select Frame | Take Photo | Switch Cam) -->
+      <footer class="relative z-30 bg-gradient-to-t from-black via-black/90 to-black/70 pt-4 px-8 flex items-center justify-between" style="padding-bottom: max(22px, var(--safe-bottom));">
+        
+        <!-- 1. Left Icon Button: Select Frame -->
+        <button id="btn-select-frame" type="button" aria-label="Select Frame" class="group flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 border border-white/15 backdrop-blur-md transition">
+          <svg id="icon-select-frame" class="w-6 h-6 text-white group-hover:text-amber-300 transition-colors" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+          </svg>
+        </button>
+
+        <!-- 2. Center Icon Button: Take Photo (Shutter) -->
+        <button id="btn-take-photo" type="button" aria-label="Take Photo" class="shutter-btn relative flex items-center justify-center w-[76px] h-[76px] rounded-full border-[4px] border-white bg-white/15 p-1.5 shadow-[0_0_25px_rgba(255,255,255,0.25)]">
+          <span class="w-full h-full rounded-full bg-white flex items-center justify-center shadow-inner">
+            <svg class="w-7 h-7 text-neutral-900" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+            </svg>
+          </span>
+        </button>
+
+        <!-- 3. Right Icon Button: Switch Camera (Back <-> Front) -->
+        <button id="btn-switch-cam" type="button" aria-label="Switch Camera" class="group flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 border border-white/15 backdrop-blur-md transition">
+          <svg id="icon-switch-cam" class="w-6 h-6 text-white transition-transform duration-300" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+        </button>
+
+      </footer>
+    </section>
+
+
+    <!-- =========================================================
+         SCREEN 2: PHOTO REVIEW & SAVE / RETAKE SCREEN
+    ========================================================== -->
+    <section id="screen-preview" class="hidden relative w-full h-full flex flex-col justify-between bg-[#090D18]">
+      
+      <!-- Top Header -->
+      <header class="flex items-center justify-center px-4 pt-4 pb-3 border-b border-white/10 bg-[#151c30]" style="padding-top: max(16px, var(--safe-top));">
+        <h2 class="text-sm font-semibold tracking-wide text-white/95">Photo Preview</h2>
+      </header>
+
+      <!-- Composited Photo Preview Container -->
+      <div class="flex-1 w-full overflow-hidden flex flex-col items-center justify-center p-4 bg-[#080B14] gap-2.5">
+        <div class="relative w-full flex-1 min-h-0 flex items-center justify-center">
+          <img id="captured-result-img" alt="Captured Photo with Frame" class="max-w-full max-h-full rounded-2xl shadow-2xl border border-white/15 object-contain select-auto" style="-webkit-touch-callout: default;" />
+        </div>
+        <p class="text-[11px] text-white/45 text-center">Tip: You can also press &amp; hold the photo to save</p>
+      </div>
+
+      <!-- Bottom Action Bar with 2 Text Buttons: Retake & Save -->
+      <footer class="bg-[#151c30] border-t border-white/10 pt-4 px-6 flex items-center gap-4" style="padding-bottom: max(22px, var(--safe-bottom));">
+        
+        <!-- Retake Text Button -->
+        <button id="btn-retake" type="button" class="flex-1 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 active:scale-[0.98] border border-white/15 text-white font-semibold text-base tracking-wide transition text-center">
+          Retake
+        </button>
+
+        <!-- Save Text Button -->
+        <button id="btn-save" type="button" class="flex-1 py-3.5 px-5 rounded-2xl bg-white hover:bg-neutral-100 active:scale-[0.98] text-neutral-950 font-bold text-base tracking-wide shadow-lg shadow-black/25 transition text-center">
+          Save
+        </button>
+
+      </footer>
+    </section>
+
+    <!-- Toast Notification Banner (Replaces alert()) -->
+    <div id="toast-banner" class="pointer-events-none fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-[#151c30]/95 text-white text-xs font-medium border border-indigo-300/25 shadow-xl opacity-0 transition-all duration-300 transform -translate-y-2 whitespace-nowrap">
+      Photo Saved!
+    </div>
+
+    <!-- Offscreen Canvas for High-Res Photo + Frame Compositing -->
+    <canvas id="composite-canvas" class="hidden"></canvas>
+  </main>
+
+  <script>
+    /**
+     * ============================================================================
+     * 1. PRESET HOSTED FRAMES CONFIG (放上網站空間時的預設相框清單)
+     * ----------------------------------------------------------------------------
+     * 只要把相框圖檔 (.png 或 .jpg) 跟 index.html 放在同一個資料夾，
+     * 並在下方陣列填入檔名，任何人打開網頁就會自動載入這些相框！
+     * ============================================================================
+     */
+    const PRESET_FRAME_FILES = [
+      './Untitled_Artwork 2_2.jpg',
+      './Untitled_Artwork 2.jpg',
+      './frame1.png',
+      './frame2.png',
+      './frame3.png'
+    ];
+
+    /**
+     * ============================================================================
+     * 2. LOCAL STORAGE (INDEXEDDB) FOR SAVED FRAMES ON YOUR PHONE
+     * ----------------------------------------------------------------------------
+     * 手機上傳過的相框會自動存在本機，下次打開連結直接可用，不用每天重傳！
+     * ============================================================================
+     */
+    const FrameStorage = {
+      dbName: 'PhotoBoothFramesDB',
+      storeName: 'frames',
+      open() {
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(this.dbName, 1);
+          req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(this.storeName)) {
+              db.createObjectStore(this.storeName, { keyPath: 'id' });
+            }
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      },
+      async getAll() {
+        try {
+          const db = await this.open();
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readonly');
+            const req = tx.objectStore(this.storeName).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+          });
+        } catch (e) {
+          return [];
+        }
+      },
+      async save(frameObj) {
+        try {
+          const db = await this.open();
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            tx.objectStore(this.storeName).put(frameObj);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (e) {
+          console.warn('Could not persist frame locally:', e);
+        }
+      },
+      async remove(id) {
+        try {
+          const db = await this.open();
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            tx.objectStore(this.storeName).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (e) {
+          console.warn('Could not delete frame locally:', e);
+        }
+      }
+    };
+
+    /**
+     * ============================================================================
+     * 3. BUILT-IN DEFAULT FRAMES & APPLICATION STATE
+     * ============================================================================
+     */
+    const DEFAULT_ARTWORK_FALLBACK_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1950" width="900" height="1950">
+        <defs>
+          <mask id="cutout-mask">
+            <rect width="900" height="1950" fill="white"/>
+            <rect x="92" y="135" width="716" height="1510" rx="88" fill="black"/>
+          </mask>
+        </defs>
+        <g mask="url(#cutout-mask)">
+          <rect width="900" height="1950" fill="#151c30"/>
+          <circle cx="85" cy="70" r="115" fill="#2d4580" opacity="0.95"/>
+          <circle cx="215" cy="40" r="85" fill="#d99b52" opacity="0.95"/>
+          <circle cx="245" cy="115" r="68" fill="#5e87b8" opacity="0.95"/>
+          <circle cx="335" cy="95" r="56" fill="#23375c" opacity="0.95"/>
+          <circle cx="72" cy="195" r="64" fill="#d6ccb8" opacity="0.95"/>
+          <path d="M405 0 Q510 155 645 140 Q745 245 900 265 L900 0 Z" fill="#1d315e"/>
+          <path d="M435 45 Q520 130 630 115 Q730 215 880 230" fill="none" stroke="#6c9bd2" stroke-width="14" stroke-linecap="round" stroke-dasharray="18 22"/>
+          <g stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.85">
+            <path d="M45 720 L45 770 M28 745 L62 745 M34 732 L56 758 M56 732 L34 758"/>
+            <path d="M845 460 L845 505 M828 482 L862 482 M834 470 L856 494"/>
+            <path d="M55 1130 L55 1175 M38 1152 L72 1152 M44 1140 L66 1164"/>
+            <path d="M840 850 L840 900 M822 875 L858 875 M830 862 L850 888"/>
+            <path d="M855 1090 L855 1135 M838 1112 L872 1112"/>
+            <path d="M48 1460 L48 1505 M32 1482 L64 1482"/>
+          </g>
+          <g fill="#ffffff" opacity="0.7">
+            <circle cx="65" cy="610" r="4"/><circle cx="35" cy="920" r="3.5"/><circle cx="70" cy="1310" r="4"/>
+            <circle cx="855" cy="670" r="4"/><circle cx="830" cy="990" r="3.5"/><circle cx="865" cy="1350" r="4"/>
+          </g>
+          <ellipse cx="260" cy="1930" rx="340" ry="270" fill="#f7e8b2"/>
+          <ellipse cx="260" cy="1930" rx="300" ry="235" fill="#fff6d6"/>
+          <polygon points="365,1715 790,1525 900,1605 900,1950 560,1950" fill="#7c432b"/>
+          <polygon points="365,1715 790,1525 900,1605 560,1855" fill="#965336"/>
+        </g>
+      </svg>
+    `);
+
+    const BUILT_IN_FRAMES = [
+      {
+        id: 'default-starry-1',
+        name: 'Starry Night Booth',
+        src: DEFAULT_ARTWORK_FALLBACK_SVG,
+        isCustom: false
+      },
+      {
+        id: 'classic-polaroid',
+        name: 'Classic White',
+        src: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1950" width="900" height="1950">
+            <defs>
+              <mask id="m1">
+                <rect width="900" height="1950" fill="white"/>
+                <rect x="64" y="96" width="772" height="1540" rx="28" fill="black"/>
+              </mask>
+            </defs>
+            <rect width="900" height="1950" fill="#FAFAFA" mask="url(#m1)"/>
+            <rect x="64" y="96" width="772" height="1540" rx="28" fill="none" stroke="#D4AF37" stroke-width="5"/>
+            <text x="450" y="1775" font-family="sans-serif" font-size="34" font-weight="700" fill="#1E293B" text-anchor="middle" letter-spacing="8">SPECIAL MOMENT</text>
+          </svg>
+        `),
+        isCustom: false
+      },
+      {
+        id: 'neon-party',
+        name: 'Neon Night',
+        src: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1950" width="900" height="1950">
+            <defs>
+              <linearGradient id="neonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#F43F5E"/>
+                <stop offset="50%" stop-color="#8B5CF6"/>
+                <stop offset="100%" stop-color="#06B6D4"/>
+              </linearGradient>
+              <mask id="m2">
+                <rect width="900" height="1950" fill="white"/>
+                <rect x="52" y="88" width="796" height="1720" rx="44" fill="black"/>
+              </mask>
+            </defs>
+            <rect width="900" height="1950" fill="#090D18" fill-opacity="0.92" mask="url(#m2)"/>
+            <rect x="52" y="88" width="796" height="1720" rx="44" fill="none" stroke="url(#neonGrad)" stroke-width="10"/>
+            <text x="450" y="1878" font-family="sans-serif" font-size="28" font-weight="700" fill="#E2E8F0" text-anchor="middle" letter-spacing="10">GOOD TIMES ONLY</text>
+          </svg>
+        `),
+        isCustom: false
+      }
+    ];
+
+    const state = {
+      frames: [...BUILT_IN_FRAMES],
+      selectedFrameIndex: 0,
+      facingMode: 'user',
+      stream: null,
+      isDrawerOpen: false,
+      capturedDataUrl: null,
+      usingFallbackPhoto: false
+    };
+
+    // DOM Element References
+    const screenCamera = document.getElementById('screen-camera');
+    const screenPreview = document.getElementById('screen-preview');
+    const viewfinderStage = document.getElementById('viewfinder-stage');
+    const videoEl = document.getElementById('camera-video');
+    const demoFallbackLayer = document.getElementById('demo-fallback-layer');
+    const fallbackPhotoPreview = document.getElementById('fallback-photo-preview');
+    const frameOverlayImg = document.getElementById('frame-overlay-img');
+    const activeFrameBadge = document.getElementById('active-frame-badge');
+    const shutterFlash = document.getElementById('shutter-flash');
+    const frameDrawer = document.getElementById('frame-drawer');
+    const frameListEl = document.getElementById('frame-list');
+    const btnSelectFrame = document.getElementById('btn-select-frame');
+    const closeDrawerBtn = document.getElementById('close-drawer-btn');
+    const btnTakePhoto = document.getElementById('btn-take-photo');
+    const btnSwitchCam = document.getElementById('btn-switch-cam');
+    const iconSwitchCam = document.getElementById('icon-switch-cam');
+    const capturedResultImg = document.getElementById('captured-result-img');
+    const btnRetake = document.getElementById('btn-retake');
+    const btnSave = document.getElementById('btn-save');
+    const retryCameraBtn = document.getElementById('retry-camera-btn');
+    const customFrameInput = document.getElementById('custom-frame-input');
+    const fallbackPhotoInput = document.getElementById('fallback-photo-input');
+    const toastBanner = document.getElementById('toast-banner');
+    const compositeCanvas = document.getElementById('composite-canvas');
+
+    /**
+     * ============================================================================
+     * SMART CENTER CUTOUT PROCESSOR (BFS FLOOD-FILL WITH EDGE FEATHERING)
+     * ============================================================================
+     */
+    function processFrameCutout(imgElement) {
+      const w = imgElement.naturalWidth || imgElement.width || 900;
+      const h = imgElement.naturalHeight || imgElement.height || 1950;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(imgElement, 0, 0, w, h);
+
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const data = imageData.data;
+      const totalPixels = w * h;
+
+      // Track visited/cutout mask: 0 = opaque border, 1 = transparent interior cutout
+      const mask = new Uint8Array(totalPixels);
+      const queue = new Int32Array(totalPixels);
+      let head = 0;
+      let tail = 0;
+
+      const isNearBlack = (idx) => {
+        const p = idx * 4;
+        return data[p] < 22 && data[p + 1] < 22 && data[p + 2] < 22;
+      };
+
+      // Seed BFS from the center of the image (and a small 5x5 grid around center)
+      const cx = Math.floor(w / 2);
+      const cy = Math.floor(h / 2);
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const sx = cx + dx;
+          const sy = cy + dy;
+          if (sx >= 0 && sx < w && sy >= 0 && sy < h) {
+            const sIdx = sy * w + sx;
+            if (!mask[sIdx] && isNearBlack(sIdx)) {
+              mask[sIdx] = 1;
+              queue[tail++] = sIdx;
+            }
+          }
+        }
+      }
+
+      // BFS flood-fill across contiguous near-black interior pixels
+      while (head < tail) {
+        const curr = queue[head++];
+        const x = curr % w;
+        const y = (curr - x) / w;
+
+        if (x > 0) {
+          const left = curr - 1;
+          if (!mask[left] && isNearBlack(left)) {
+            mask[left] = 1;
+            queue[tail++] = left;
+          }
+        }
+        if (x < w - 1) {
+          const right = curr + 1;
+          if (!mask[right] && isNearBlack(right)) {
+            mask[right] = 1;
+            queue[tail++] = right;
+          }
+        }
+        if (y > 0) {
+          const up = curr - w;
+          if (!mask[up] && isNearBlack(up)) {
+            mask[up] = 1;
+            queue[tail++] = up;
+          }
+        }
+        if (y < h - 1) {
+          const down = curr + w;
+          if (!mask[down] && isNearBlack(down)) {
+            mask[down] = 1;
+            queue[tail++] = down;
+          }
+        }
+      }
+
+      // Apply transparency to the interior cutout + 2px subtle edge feathering
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = y * w + x;
+          const p = idx * 4;
+
+          if (mask[idx] === 1) {
+            // Interior cutout pixel -> fully transparent
+            data[p + 3] = 0;
+          } else {
+            // Check 1px and 2px neighborhood for subtle anti-aliased edge feathering
+            let transparentNeighbors1 = 0;
+            let transparentNeighbors2 = 0;
+
+            for (let dy = -2; dy <= 2; dy++) {
+              const ny = y + dy;
+              if (ny < 0 || ny >= h) continue;
+              for (let dx = -2; dx <= 2; dx++) {
+                const nx = x + dx;
+                if (nx < 0 || nx >= w) continue;
+                if (mask[ny * w + nx] === 1) {
+                  const distSq = dx * dx + dy * dy;
+                  if (distSq <= 2) transparentNeighbors1++;
+                  else if (distSq <= 5) transparentNeighbors2++;
+                }
+              }
+            }
+
+            if (transparentNeighbors1 > 0) {
+              // Immediate 1px border edge: soft feather (alpha ~90-140)
+              data[p + 3] = Math.max(75, 255 - transparentNeighbors1 * 32);
+            } else if (transparentNeighbors2 > 0) {
+              // Outer 2px border edge: gentle feather (alpha ~200-235)
+              data[p + 3] = Math.max(195, 255 - transparentNeighbors2 * 10);
+            }
+          }
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      return canvas.toDataURL('image/png');
+    }
+
+    /**
+     * Loads hosted preset frames (`PRESET_FRAME_FILES`), saved frames from phone
+     * storage (`FrameStorage`), and falls back to the built-in default artwork so
+     * prepared frames are immediately ready whenever you open the link.
+     */
+    async function initializePreparedFrames() {
+      const loadedPresetFrames = [];
+
+      // 1. Try loading any preset frame files hosted alongside index.html
+      for (let i = 0; i < PRESET_FRAME_FILES.length; i++) {
+        const url = PRESET_FRAME_FILES[i];
+        try {
+          const img = await loadImageAsync(url);
+          const processedPngDataUrl = processFrameCutout(img);
+          loadedPresetFrames.push({
+            id: `preset-${i}`,
+            name: `Frame ${i + 1}`,
+            src: processedPngDataUrl,
+            isCustom: false
+          });
+        } catch (err) {
+          // Skip files not present on the server
+        }
+      }
+
+      // 2. If no external preset files were found on the server, process built-in Frame 1
+      if (loadedPresetFrames.length === 0) {
+        try {
+          const fallbackImg = await loadImageAsync(DEFAULT_ARTWORK_FALLBACK_SVG);
+          state.frames[0].src = processFrameCutout(fallbackImg);
+        } catch (err) {
+          // Keep raw SVG fallback
+        }
+      } else {
+        // Replace built-in default with the hosted preset frames + remaining built-in styles
+        state.frames = [...loadedPresetFrames, ...BUILT_IN_FRAMES.slice(1)];
+      }
+
+      // 3. Load any custom frames previously saved on this phone via "+ Add Frame"
+      const savedCustomFrames = await FrameStorage.getAll();
+      if (savedCustomFrames.length > 0) {
+        // Sort newest first and place at the front of the frame list
+        savedCustomFrames.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        state.frames = [...savedCustomFrames, ...state.frames];
+      }
+
+      selectFrame(0);
+    }
+
+    /**
+     * ============================================================================
+     * CAMERA INITIALIZATION & FRONT/BACK SWITCHING
+     * ============================================================================
+     */
+    async function initCamera() {
+      if (state.stream) {
+        state.stream.getTracks().forEach((track) => track.stop());
+        state.stream = null;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showCameraFallback('Camera not supported in this browser');
+        return;
+      }
+
+      try {
+        const constraints = {
+          audio: false,
+          video: {
+            facingMode: { ideal: state.facingMode },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
+        };
+
+        const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        state.stream = mediaStream;
+        videoEl.srcObject = mediaStream;
+
+        // Mirror front-facing camera so selfie preview feels natural
+        if (state.facingMode === 'user') {
+          videoEl.classList.add('mirror-video');
+        } else {
+          videoEl.classList.remove('mirror-video');
+        }
+
+        videoEl.classList.remove('hidden');
+        demoFallbackLayer.classList.add('hidden');
+        state.usingFallbackPhoto = false;
+        fallbackPhotoPreview.classList.add('hidden');
+      } catch (err) {
+        console.warn('Camera access error:', err);
+        showCameraFallback('Camera unavailable or permission denied');
+      }
+    }
+
+    function showCameraFallback(message) {
+      document.getElementById('camera-status-text').textContent = message;
+      videoEl.classList.add('hidden');
+      if (!state.usingFallbackPhoto) {
+        demoFallbackLayer.classList.remove('hidden');
+      }
+    }
+
+    /**
+     * ============================================================================
+     * FRAME SELECTION & DRAWER UI
+     * ============================================================================
+     */
+    function selectFrame(index) {
+      if (state.frames.length === 0) {
+        state.selectedFrameIndex = -1;
+        frameOverlayImg.removeAttribute('src');
+        frameOverlayImg.classList.add('hidden');
+        activeFrameBadge.textContent = 'No Frame';
+        renderFrameList();
+        return;
+      }
+
+      if (index < 0 || index >= state.frames.length) {
+        index = 0;
+      }
+      state.selectedFrameIndex = index;
+      const frame = state.frames[index];
+
+      frameOverlayImg.classList.remove('hidden');
+      frameOverlayImg.onload = () => {
+        const natW = frameOverlayImg.naturalWidth;
+        const natH = frameOverlayImg.naturalHeight;
+        if (natW && natH) {
+          // Lock viewfinder stage to the exact aspect ratio of the frame so it NEVER stretches or squishes
+          viewfinderStage.style.aspectRatio = `${natW} / ${natH}`;
+        }
+      };
+      frameOverlayImg.src = frame.src;
+      activeFrameBadge.textContent = `Frame ${index + 1}`;
+      renderFrameList();
+    }
+
+    function removeFrame(index) {
+      if (index < 0 || index >= state.frames.length) return;
+      const [removed] = state.frames.splice(index, 1);
+      if (removed && removed.isCustom) {
+        FrameStorage.remove(removed.id);
+      }
+
+      if (state.frames.length === 0) {
+        selectFrame(-1);
+      } else if (state.selectedFrameIndex === index) {
+        selectFrame(Math.min(index, state.frames.length - 1));
+      } else if (state.selectedFrameIndex > index) {
+        state.selectedFrameIndex -= 1;
+        activeFrameBadge.textContent = `Frame ${state.selectedFrameIndex + 1}`;
+        renderFrameList();
+      } else {
+        activeFrameBadge.textContent = `Frame ${state.selectedFrameIndex + 1}`;
+        renderFrameList();
+      }
+      showToast('Frame removed');
+    }
+
+    function renderFrameList() {
+      frameListEl.innerHTML = '';
+
+      if (state.frames.length === 0) {
+        frameListEl.innerHTML = `<div class="w-full py-4 text-center text-xs text-white/50">No frames available. Tap "+ Add Frame" to upload one.</div>`;
+        return;
+      }
+
+      state.frames.forEach((frame, idx) => {
+        const isSelected = idx === state.selectedFrameIndex;
+        const cardWrapper = document.createElement('div');
+        cardWrapper.className = `relative flex-shrink-0 p-1.5 rounded-xl transition cursor-pointer ${
+          isSelected
+            ? 'bg-amber-400/20 ring-2 ring-amber-400'
+            : 'bg-white/5 hover:bg-white/10 border border-white/10'
+        }`;
+
+        cardWrapper.innerHTML = `
+          <div class="relative h-24 rounded-lg overflow-hidden bg-neutral-800/80 flex items-center justify-center">
+            <img src="${frame.src}" alt="Frame ${idx + 1}" class="h-full w-auto max-w-none object-contain block" />
+          </div>
+          <button type="button" aria-label="Remove frame" class="remove-frame-btn absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-neutral-900/95 hover:bg-rose-500 text-white/90 hover:text-white border border-white/25 flex items-center justify-center shadow-md transition">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        `;
+
+        cardWrapper.addEventListener('click', () => {
+          selectFrame(idx);
+        });
+
+        const removeBtn = cardWrapper.querySelector('.remove-frame-btn');
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          removeFrame(idx);
+        });
+
+        frameListEl.appendChild(cardWrapper);
+      });
+    }
+
+    function toggleDrawer(forceState) {
+      state.isDrawerOpen = typeof forceState === 'boolean' ? forceState : !state.isDrawerOpen;
+      if (state.isDrawerOpen) {
+        frameDrawer.classList.remove('translate-y-6', 'opacity-0', 'pointer-events-none');
+        frameDrawer.classList.add('translate-y-0', 'opacity-100', 'pointer-events-auto');
+        btnSelectFrame.classList.add('ring-2', 'ring-amber-400', 'bg-white/20');
+      } else {
+        frameDrawer.classList.add('translate-y-6', 'opacity-0', 'pointer-events-none');
+        frameDrawer.classList.remove('translate-y-0', 'opacity-100', 'pointer-events-auto');
+        btnSelectFrame.classList.remove('ring-2', 'ring-amber-400', 'bg-white/20');
+      }
+    }
+
+    /**
+     * ============================================================================
+     * PHOTO CAPTURE & HIGH-RES CANVAS COMPOSITING
+     * ============================================================================
+     */
+    function triggerShutterFlash() {
+      shutterFlash.classList.remove('animate-flash');
+      // Trigger reflow so animation restarts cleanly
+      void shutterFlash.offsetWidth;
+      shutterFlash.classList.add('animate-flash');
+    }
+
+    function loadImageAsync(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+
+    async function captureCompositePhoto() {
+      // Close drawer if open
+      toggleDrawer(false);
+      triggerShutterFlash();
+
+      // Match exact viewfinder aspect ratio so what you see is 100% what you get
+      const stageRect = viewfinderStage.getBoundingClientRect();
+      const targetAspect = stageRect.width / stageRect.height;
+
+      // High-resolution output dimensions (e.g., 1080px wide)
+      const outWidth = 1080;
+      const outHeight = Math.round(outWidth / targetAspect);
+
+      compositeCanvas.width = outWidth;
+      compositeCanvas.height = outHeight;
+      const ctx = compositeCanvas.getContext('2d');
+
+      // 1. Draw Background Layer (Live Video, Uploaded Fallback Photo, or Gradient)
+      ctx.save();
+
+      if (state.stream && videoEl.readyState >= 2) {
+        const vidW = videoEl.videoWidth;
+        const vidH = videoEl.videoHeight;
+        const vidAspect = vidW / vidH;
+
+        // Calculate "object-fit: cover" crop rectangle
+        let sx = 0, sy = 0, sWidth = vidW, sHeight = vidH;
+        if (vidAspect > targetAspect) {
+          sWidth = vidH * targetAspect;
+          sx = (vidW - sWidth) / 2;
+        } else {
+          sHeight = vidW / targetAspect;
+          sy = (vidH - sHeight) / 2;
+        }
+
+        // Mirror horizontally if front camera ('user') is active
+        if (state.facingMode === 'user') {
+          ctx.translate(outWidth, 0);
+          ctx.scale(-1, 1);
+        }
+
+        ctx.drawImage(videoEl, sx, sy, sWidth, sHeight, 0, 0, outWidth, outHeight);
+      } else if (state.usingFallbackPhoto && fallbackPhotoPreview.src) {
+        const bgImg = await loadImageAsync(fallbackPhotoPreview.src);
+        const imgAspect = bgImg.width / bgImg.height;
+        let sx = 0, sy = 0, sWidth = bgImg.width, sHeight = bgImg.height;
+        if (imgAspect > targetAspect) {
+          sWidth = bgImg.height * targetAspect;
+          sx = (bgImg.width - sWidth) / 2;
+        } else {
+          sHeight = bgImg.width / targetAspect;
+          sy = (bgImg.height - sHeight) / 2;
+        }
+        ctx.drawImage(bgImg, sx, sy, sWidth, sHeight, 0, 0, outWidth, outHeight);
+      } else {
+        // Fallback gradient background if no webcam & no sample image
+        const grad = ctx.createLinearGradient(0, 0, outWidth, outHeight);
+        grad.addColorStop(0, '#1e1b4b');
+        grad.addColorStop(1, '#3b0764');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, outWidth, outHeight);
+      }
+
+      // Restore canvas transform so the photo frame overlay is NEVER mirrored
+      ctx.restore();
+
+      // 2. Draw Selected Photo Frame Overlay on Top (if a frame is active)
+      if (state.selectedFrameIndex >= 0 && state.frames[state.selectedFrameIndex]) {
+        try {
+          const activeFrame = state.frames[state.selectedFrameIndex];
+          const frameImg = await loadImageAsync(activeFrame.src);
+          ctx.drawImage(frameImg, 0, 0, outWidth, outHeight);
+        } catch (err) {
+          console.error('Error compositing frame overlay:', err);
+        }
+      }
+
+      // 3. Export final image and transition to Screen 2
+      state.capturedDataUrl = compositeCanvas.toDataURL('image/png', 0.95);
+      capturedResultImg.src = state.capturedDataUrl;
+
+      setTimeout(() => {
+        screenCamera.classList.add('hidden');
+        screenPreview.classList.remove('hidden');
+      }, 160);
+    }
+
+    /**
+     * ============================================================================
+     * SAVE & RETAKE ACTIONS (SCREEN 2)
+     * ============================================================================
+     */
+    function handleRetake() {
+      state.capturedDataUrl = null;
+      screenPreview.classList.add('hidden');
+      screenCamera.classList.remove('hidden');
+    }
+
+    function dataUrlToBlob(dataUrl) {
+      const parts = dataUrl.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1] || 'image/png';
+      const binary = atob(parts[1]);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return new Blob([bytes], { type: mime });
+    }
+
+    async function handleSave() {
+      if (!state.capturedDataUrl) return;
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `photo-frame-${timestamp}.png`;
+
+      try {
+        const blob = dataUrlToBlob(state.capturedDataUrl);
+        const file = new File([blob], filename, { type: 'image/png' });
+
+        // 1. Mobile Native Share Sheet (Allows direct "Save Image" to iOS/Android Photos)
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Photo Frame'
+          });
+          showToast('Photo Saved!');
+          return;
+        }
+
+        // 2. Blob Object URL Download (More reliable than data: URLs on mobile & desktop)
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = blobUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+
+        showToast('Photo Saved!');
+      } catch (err) {
+        // Ignore if user simply dismissed the share sheet
+        if (err && err.name === 'AbortError') return;
+        showToast('Long-press the photo above to save');
+      }
+    }
+
+    function showToast(text) {
+      toastBanner.textContent = text;
+      toastBanner.classList.remove('opacity-0', '-translate-y-2');
+      toastBanner.classList.add('opacity-100', 'translate-y-0');
+
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => {
+        toastBanner.classList.add('opacity-0', '-translate-y-2');
+        toastBanner.classList.remove('opacity-100', 'translate-y-0');
+      }, 2400);
+    }
+
+    /**
+     * ============================================================================
+     * EVENT LISTENERS & INITIALIZATION
+     * ============================================================================
+     */
+    btnSelectFrame.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDrawer();
+    });
+
+    closeDrawerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDrawer(false);
+    });
+
+    // Close drawer when tapping outside on the viewfinder
+    viewfinderStage.addEventListener('click', () => {
+      if (state.isDrawerOpen) toggleDrawer(false);
+    });
+
+    btnTakePhoto.addEventListener('click', () => {
+      captureCompositePhoto();
+    });
+
+    btnSwitchCam.addEventListener('click', () => {
+      state.facingMode = state.facingMode === 'user' ? 'environment' : 'user';
+      iconSwitchCam.classList.toggle('rotate-180');
+      initCamera();
+    });
+
+    btnRetake.addEventListener('click', handleRetake);
+    btnSave.addEventListener('click', handleSave);
+    retryCameraBtn.addEventListener('click', initCamera);
+
+    // Custom Frame Upload (+ Add Frame button) with auto black-center cutout & local persistence
+    customFrameInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const img = await loadImageAsync(ev.target.result);
+          const processedDataUrl = processFrameCutout(img);
+          const newFrame = {
+            id: `custom-${Date.now()}`,
+            name: file.name.replace(/\.[^/.]+$/, ''),
+            src: processedDataUrl,
+            isCustom: true,
+            createdAt: Date.now()
+          };
+          state.frames.unshift(newFrame);
+          await FrameStorage.save(newFrame);
+          selectFrame(0);
+          toggleDrawer(true);
+          showToast('Frame saved to device!');
+        } catch (err) {
+          showToast('Failed to load frame image');
+        }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    });
+
+    // Sample Photo Upload (if testing on a device without a camera)
+    fallbackPhotoInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        fallbackPhotoPreview.src = ev.target.result;
+        fallbackPhotoPreview.classList.remove('hidden');
+        demoFallbackLayer.classList.add('hidden');
+        state.usingFallbackPhoto = true;
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    });
+
+    // Boot application on window load
+    window.addEventListener('load', async () => {
+      await initializePreparedFrames();
+      await initCamera();
+    });
+  </script>
+</body>
+</html>
